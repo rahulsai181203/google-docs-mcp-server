@@ -2,6 +2,24 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server written in Go that gives Claude (and other MCP clients) full read/write access to Google Docs and Google Drive.
 
+## Repository Structure
+
+```
+google-docs-mcp/
+├── main.go                  Entry point — server startup
+├── tools.go                 MCP tool registration
+├── handlers.go              Google Docs and Drive handler functions
+├── internal/
+│   └── auth/
+│       └── auth.go          Shared OAuth2 / service-account auth
+├── cmd/
+│   ├── docformat/
+│   │   └── main.go          Beautify + code-snippet formatter
+│   └── reformat/
+│       └── main.go          Clean reformatter with hyperlink detection
+└── README.md
+```
+
 ## Tools
 
 | Tool | Description |
@@ -32,14 +50,13 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server written in Go
 6. Save it to `~/.config/google-docs-mcp/credentials.json`
 
    Or set the environment variable:
-   ```
+   ```bash
    export GOOGLE_OAUTH_CREDENTIALS=/path/to/your/credentials.json
    ```
 
 ### 2. Build
 
 ```bash
-cd google-docs-mcp
 go mod tidy
 go build -o google-docs-mcp .
 ```
@@ -92,8 +109,32 @@ Restart Claude Desktop after editing the config.
 | `GOOGLE_APPLICATION_CREDENTIALS` | Path to a service account key JSON file |
 | `GOOGLE_OAUTH_CREDENTIALS` | Path to OAuth2 client credentials JSON (default: `~/.config/google-docs-mcp/credentials.json`) |
 
+## Utilities
+
+### `cmd/reformat` — Document Formatter
+
+Applies clean formatting to any Google Doc in three passes:
+1. **Reset** — strips all previous custom styling
+2. **Format** — headings, code blocks, spacing
+3. **Linkify** — detects URLs and converts them to clickable hyperlinks
+
+```bash
+go run ./cmd/reformat/ <document-id-or-url>
+```
+
+### `cmd/docformat` — Beautifier
+
+Applies heading styles and code-snippet styling (Courier New, gray background) to a Google Doc.
+
+```bash
+go run ./cmd/docformat/ <document-id-or-url>
+```
+
+Both utilities share authentication with the MCP server via `internal/auth` — no extra setup needed once `--auth` has been run.
+
 ## Notes
 
 - Document IDs and full `docs.google.com` URLs are both accepted wherever a `document_id` is required.
 - Character indices in the Docs API are 1-based. Use `get_document` first to understand the document structure before inserting or deleting by index.
 - `delete_content_range` uses an exclusive end index (same convention as the Docs API).
+- The OAuth token is refreshed automatically when it expires.
