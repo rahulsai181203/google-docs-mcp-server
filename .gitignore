@@ -1,4 +1,7 @@
 # Binary
 google-docs-mcp
+
+# IDE / OS
 .idea
+.DS_Store
 .*

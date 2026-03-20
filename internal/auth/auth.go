@@ -1,4 +1,6 @@
-package main
+// Package auth provides Google OAuth2 and service-account authentication
+// shared by the MCP server and CLI utilities.
+package auth
 
 import (
 	"context"
@@ -14,22 +16,22 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
-// OAuth2 scopes required by this server.
-var oauthScopes = []string{
+// Scopes required by this server.
+var Scopes = []string{
 	"https://www.googleapis.com/auth/documents",
 	"https://www.googleapis.com/auth/drive",
 }
 
-// newGoogleClient returns an authenticated HTTP client.
-// It prefers service account credentials (GOOGLE_APPLICATION_CREDENTIALS env var),
+// NewGoogleClient returns an authenticated HTTP client.
+// Prefers service-account credentials (GOOGLE_APPLICATION_CREDENTIALS),
 // falling back to OAuth2 with a saved token.
-func newGoogleClient(ctx context.Context) (*http.Client, error) {
+func NewGoogleClient(ctx context.Context) (*http.Client, error) {
 	if credFile := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"); credFile != "" {
 		b, err := os.ReadFile(credFile)
 		if err != nil {
 			return nil, fmt.Errorf("reading service account file %s: %w", credFile, err)
 		}
-		creds, err := google.CredentialsFromJSON(ctx, b, oauthScopes...)
+		creds, err := google.CredentialsFromJSON(ctx, b, Scopes...)
 		if err != nil {
 			return nil, fmt.Errorf("parsing service account credentials: %w", err)
 		}
@@ -49,8 +51,8 @@ func newGoogleClient(ctx context.Context) (*http.Client, error) {
 	return config.Client(ctx, token), nil
 }
 
-// runAuthSetup runs the interactive OAuth2 flow and saves the token.
-func runAuthSetup(ctx context.Context) error {
+// RunAuthSetup runs the interactive OAuth2 flow and persists the token.
+func RunAuthSetup(ctx context.Context) error {
 	config, err := loadOAuthConfig()
 	if err != nil {
 		return err
@@ -77,7 +79,7 @@ func loadOAuthConfig() (*oauth2.Config, error) {
 			credsPath, credsPath,
 		)
 	}
-	config, err := google.ConfigFromJSON(b, oauthScopes...)
+	config, err := google.ConfigFromJSON(b, Scopes...)
 	if err != nil {
 		return nil, fmt.Errorf("parsing OAuth credentials: %w", err)
 	}
@@ -96,14 +98,12 @@ func loadSavedToken(ctx context.Context, config *oauth2.Config) (*oauth2.Token, 
 		return nil, fmt.Errorf("invalid token file: %w", err)
 	}
 
-	// Refresh if expired
 	ts := config.TokenSource(ctx, &token)
 	refreshed, err := ts.Token()
 	if err != nil {
 		return nil, fmt.Errorf("token refresh failed (re-run --auth): %w", err)
 	}
 
-	// Persist refreshed token
 	if refreshed.AccessToken != token.AccessToken {
 		_ = saveToken(refreshed)
 	}
@@ -124,9 +124,8 @@ func runOAuthFlow(ctx context.Context, config *oauth2.Config) (*oauth2.Token, er
 			errCh <- fmt.Errorf("oauth error: %s", e)
 			return
 		}
-		code := r.URL.Query().Get("code")
 		fmt.Fprintln(w, "<html><body><h2>Authentication successful!</h2><p>You can close this tab.</p></body></html>")
-		codeCh <- code
+		codeCh <- r.URL.Query().Get("code")
 	})
 
 	config.RedirectURL = "http://localhost:8085/oauth/callback"
@@ -142,10 +141,8 @@ func runOAuthFlow(ctx context.Context, config *oauth2.Config) (*oauth2.Token, er
 	defer cancel()
 	defer srv.Shutdown(shutdownCtx) //nolint:errcheck
 
-	fmt.Fprintf(os.Stderr, "\n=== Google Docs MCP — Authentication ===\n\n")
-	fmt.Fprintf(os.Stderr, "Opening Chrome for authentication...\n")
+	fmt.Fprintf(os.Stderr, "\n=== Google Docs MCP — Authentication ===\n\nOpening Chrome for authentication...\n")
 
-	// Open in Chrome; fall back to the system default browser if Chrome is not found.
 	if err := exec.Command("open", "-a", "Google Chrome", authURL).Start(); err != nil {
 		if err2 := exec.Command("open", authURL).Start(); err2 != nil {
 			fmt.Fprintf(os.Stderr, "Could not open browser automatically.\nOpen this URL manually:\n\n%s\n\n", authURL)
